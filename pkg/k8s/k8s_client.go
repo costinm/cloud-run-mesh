@@ -25,13 +25,10 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/klog"
-)
-
-import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 )
 
 var Debug = true
@@ -116,7 +113,7 @@ func (kr *K8S) initInCluster() error {
 	}
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	kr.Client, err = kubernetes.NewForConfig(config)
 	if err != nil {

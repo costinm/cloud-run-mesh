@@ -67,16 +67,21 @@ push:
 #  		 --set-env-vars="^.^ENVOY_LOG_LEVEL=debug,config:warn,main:warn,upstream:warn" \
 #  		 --set-env-vars="XDS_AGENT_DEBUG=googleca:debug" \
 
+CLOUDRUN_AUTH?="--allow-unauthenticated"
+
 # Deploy to cloudrun
 # Adding XDS_ADDR=READ_DOMAIN:443 will skip looking up for MCP configmap and use that address instead.
 deploy:
+	$(MAKE) _deploy CLOUDRUN_RUNTIME="--execution-environment=gen2" DEPLOY_EXTRA=${FORTIO_DEPLOY_EXTRA}
+
+_deploy:
 	gcloud alpha run deploy ${SERVICE} \
-		  --execution-environment=gen2 \
+		  ${CLOUDRUN_RUNTIME} \
 		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
 		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
           --vpc-connector projects/${CONFIG_PROJECT_ID}/locations/${REGION}/connectors/serverlesscon \
          \
-         --allow-unauthenticated \
+         ${CLOUDRUN_AUTH} \
          \
          --use-http2 \
          --port 15009 \
@@ -87,9 +92,12 @@ deploy:
 		--image ${FORTIO_IMAGE} \
 		\
 		   --set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
-  		  ${FORTIO_DEPLOY_EXTRA} \
+  		  ${DEPLOY_EXTRA} \
 		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
 
+
+deploy-gvisor:
+	$(MAKE) _deploy CLOUDRUN_RUNTIME="" SERVICE=fortio-gvisor
 
 # No longer used:
 #		   --set-env-vars="CLUSTER_NAME=${CLUSTER_NAME}" \
@@ -98,20 +106,27 @@ deploy:
 
 # This is the barebone deploy, with auth enabled
 deploy-auth:
-	gcloud alpha run deploy ${SERVICE}-auth \
-		  --execution-environment=gen2 \
-		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
-		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
-          --vpc-connector projects/${CONFIG_PROJECT_ID}/locations/${REGION}/connectors/serverlesscon \
-         \
-         --use-http2 \
-         --port 15009 \
-         \
-		--no-allow-unauthenticated \
-         \
-         --image ${FORTIO_IMAGE} \
-  		  --set-env-vars=MESH=gke://${CONFIG_PROJECT_ID} \
-  		 ${FORTIO_DEPLOY_EXTRA}
+	$(MAKE) _deploy CLOUDRUN_RUNTIME="" SERVICE=fortio-auth CLOUDRUN_AUTH="--no-allow-unauthenticated"
+#  		  --set-env-vars=MESH=gke://${CONFIG_PROJECT_ID} \
+
+# Secrets from different project: projects/${PROJECT_NUMBER}/secrets/mesh:latest
+# The secret is expected to contain a json including key/value pairs, with cert, roots, private key
+# and an optional mesh.env - if missing the MESH= will be used.
+# echo -n "{}" | gcloud secrets create mesh \
+#    --replication-policy="automatic" \
+#    --data-file=-
+#
+# View: gcloud secrets version access latest --secret mesh
+deploy-secrets:
+	$(MAKE) _deploy SERVICE=fortio-secret DEPLOY_EXTRA="--update-secrets=/var/run/secrets/mesh/mesh.json=mesh:latest"
+
+# Create a mesh secret. TODO: different names, based on the KSA
+secret-init:
+	gcloud secrets create mesh       --replication-policy="automatic" \
+    	  --data-file=../../var/run/secrets/mesh/mesh.json
+	gcloud secrets add-iam-policy-binding mesh \
+		--member="serviceAccount:${CLOUDRUN_SERVICE_ACCOUNT}" \
+		--role="roles/secretmanager.secretAccessor"
 
 
 # Port 14009 for using envoy for ingress

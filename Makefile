@@ -578,3 +578,5 @@ release/latest:
 	gcrane tag gcr.io/wlhe-cr/krun/gate:main latest
 	gcrane tag gcr.io/wlhe-cr/fortio-mesh:main latest
 
+### Experimental - modified golden image for multi-container and 'gateway' mode.
+
