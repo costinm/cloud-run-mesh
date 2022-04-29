@@ -41,15 +41,19 @@ func main() {
 		startTd(kr)
 		select {}
 	}
-	err := gcp.InitGCP(ctx, kr)
-	if err != nil {
-		log.Fatal("Failed to find K8S ", time.Since(kr.StartTime), kr, os.Environ(), err)
-	}
+	if os.Getenv("XDS_ADDR") != "" {
+		// Explicit config, bypass auto-discovery
+	} else {
+		err := gcp.InitGCP(ctx, kr)
+		if err != nil {
+			log.Fatal("Failed to find K8S ", time.Since(kr.StartTime), kr, os.Environ(), err)
+		}
 
-	// Use env and vendor init to discover the mesh - including APIserver, XDS, roots.
-	err = kr.LoadConfig(context.Background())
-	if err != nil {
-		log.Fatal("Failed to connect to mesh ", time.Since(kr.StartTime), kr, os.Environ(), err)
+		// Use env and vendor init to discover the mesh - including APIserver, XDS, roots.
+		err = kr.LoadConfig(context.Background())
+		if err != nil {
+			log.Fatal("Failed to connect to mesh ", time.Since(kr.StartTime), kr, os.Environ(), err)
+		}
 	}
 
 	meshMode := true
@@ -104,7 +108,7 @@ func main() {
 
 	kr.StartApp()
 
-	err = kr.WaitAppStartup()
+	err := kr.WaitAppStartup()
 	if err != nil {
 		log.Fatal("Timeout waiting for app", err)
 	}

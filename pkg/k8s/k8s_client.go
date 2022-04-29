@@ -34,11 +34,11 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-var Debug = true
+var Debug = false
 
 type K8S struct {
-	Mesh *mesh.KRun
-	Client                                  *kubernetes.Clientset
+	Mesh   *mesh.KRun
+	Client *kubernetes.Clientset
 }
 
 func K8SClient(kr *mesh.KRun) *kubernetes.Clientset {

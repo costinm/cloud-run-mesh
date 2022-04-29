@@ -71,7 +71,7 @@ type KRun struct {
 
 	// External address of the mesh connector
 	// Not used for internal workloads.
-	MeshConnectorAddr         string
+	MeshConnectorAddr string
 
 	// Internal (ILB) address.
 	MeshConnectorInternalAddr string
@@ -109,6 +109,9 @@ type KRun struct {
 
 	// ProjectId is the name of the project where config cluster is running
 	// The workload may be in a different project.
+	//
+	// Can be set using PROJECT_ID, or will be detected using MDS or the
+	// kubeconfig cluster name.
 	ProjectId string
 
 	// ProjectNumber is used for GCP federated token exchange.
@@ -117,10 +120,17 @@ type KRun struct {
 	// This is used for MeshCA and Stackdriver access.
 	ProjectNumber string
 
-	// Deprecated - ClusterAddress used instead.
+	// ClusterName is the local name of the cluster ("mycluster").
+	// This is not unique in GKE - ClusterAddress is the unique name, including
+	// ProjectId and ClusterLocation.
+	//
+	// Can be set using CLUSTER_NAME, or will be detected.
 	ClusterName string
 
-	// TODO: replace with Workloadlocation. Config cluster location not used.
+	// ClusterLocation is the location of the config cluster, may be different from
+	// the workload location.
+	//
+	// Can be set using CLUSTER_LOCATION, or will be detected.
 	ClusterLocation string
 
 	Children    []*exec.Cmd
@@ -128,10 +138,10 @@ type KRun struct {
 	appCmd      *exec.Cmd
 	TrustDomain string
 
-	StartTime  time.Time
+	StartTime      time.Time
 	EnvoyStartTime time.Time
 	EnvoyReadyTime time.Time
-	AppReadyTime time.Time
+	AppReadyTime   time.Time
 
 	Labels     map[string]string
 	VendorInit func(context.Context, *KRun) error
@@ -189,6 +199,8 @@ type KRun struct {
 	// Network Name for which the envoy configs will be requested. For TD, this refers to VPC network name
 	// in the forwarding rule.
 	NetworkName string
+	// If true, will not attempt to save the certificates to ./var/run/secrets/workload-certs/...
+	SkipSaveCerts bool
 }
 
 var Debug = false
@@ -346,7 +358,6 @@ func (kr *KRun) initFromEnv() {
 	//	kr.Aud2File["api"] = prefix + "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	//}
 
-	// TODO: stop using this, use ProxyConfig.DiscoveryAddress instead
 	if kr.XDSAddr == "" {
 		kr.XDSAddr = os.Getenv("XDS_ADDR")
 	}
@@ -439,9 +450,12 @@ func (kr *KRun) RefreshAndSaveTokens() {
 	// TODO: trace on errors
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 
-	for aud, f := range kr.Aud2File {
-		kr.saveTokenToFile(ctx, kr.Namespace, aud, f)
+	if kr.TokenProvider != nil {
+		for aud, f := range kr.Aud2File {
+			kr.saveTokenToFile(ctx, kr.Namespace, aud, f)
+		}
 	}
+
 	kr.InitCertificates(ctx, WorkloadCertDir)
 	// TODO: we may want to reload mesh-env, and adjust behavior ( log levels, etc)
 	// Then we can also call  kr.InitRoots(ctx, certBase).
@@ -480,8 +494,8 @@ func (kr *KRun) saveTokenToFile(ctx context.Context, ns string, audience string,
 func (kr *KRun) FindXDSAddr() string {
 	if kr.XDSAddr != "" {
 		if (kr.MeshTenant == "-" || kr.MeshTenant == "") &&
-			strings.Contains(kr.XDSAddr, "googleapis.com") &&
-			strings.Contains(kr.XDSAddr, "meshconfig") {
+				strings.Contains(kr.XDSAddr, "googleapis.com") &&
+				strings.Contains(kr.XDSAddr, "meshconfig") {
 			log.Println("Ignoring meshconfig XDS address without tenant, using mesh connector")
 		} else {
 			return kr.XDSAddr

@@ -74,6 +74,17 @@ const (
 	stsIssuedTokenType = "urn:ietf:params:oauth:token-type:access_token"
 )
 
+type AuthConfig struct {
+	ProjectNumber  string
+	TrustDomain    string
+	ClusterAddress string
+	TokenSource    TokenSource
+}
+
+type TokenSource interface {
+	GetToken(context.Context, string) (string, error)
+}
+
 // STS provides token exchanges. Implements grpc and golang.org/x/oauth2.TokenSource
 // The source of trust is the K8S token with TrustDomain audience, it is exchanged with access or ID tokens.
 type STS struct {
@@ -84,9 +95,40 @@ type STS struct {
 	// The KSA returned from K8S must have the IAM permissions
 	GSA string
 
+	AudOverride string
+
 	// Use mesh data plane SA.
 	MDPSA          bool
+	K8S            bool
 	UseAccessToken bool
+}
+
+// NewGSATokenSource returns a oauth2.TokenSource and
+// grpc credentials.PerRPCCredentials implmentation, returning access
+// tokens for a Google Service Account.
+//
+// If the gsa is empty, the ASM mesh P4SA will be used instead. This is
+// suitable for connecting to stackdriver and out-of-cluster managed Istiod.
+// Otherwise, the gsa must grant the KSA (kubernetes service account)
+// permission to act as the GSA.
+func NewGSATokenSource(kr *mesh.KRun, gsa string) *STS {
+	sts, _ := NewSTS(kr)
+	if gsa == "" {
+		sts.MDPSA = true
+	} else {
+		sts.GSA = gsa
+	}
+	sts.UseAccessToken = true
+	return sts
+}
+
+// NewK8STokenSource returns a oauth2 and grpc token source that returns
+// K8S signed JWTs with the given audience.
+func NewK8STokenSource(kr *mesh.KRun, audOverride string) *STS {
+	sts, _ := NewSTS(kr)
+	sts.K8S = true
+	sts.AudOverride = audOverride
+	return sts
 }
 
 func NewSTS(kr *mesh.KRun) (*STS, error) {
@@ -118,9 +160,19 @@ func (s *STS) Token() (*oauth2.Token, error) {
 	a := mv["authorization"]
 	// WIP - split, etc
 	t := &oauth2.Token{
-		AccessToken:  a,
+		AccessToken: a,
 	}
 	return t, nil
+}
+
+func (s *STS) md(t string) map[string]string {
+	res := map[string]string{
+		"authorization": "Bearer " + t,
+	}
+	if s.kr.ProjectNumber != "" {
+		res["x-goog-user-project"] = s.kr.ProjectNumber
+	}
+	return res
 }
 
 // GetRequestMetadata implements credentials.PerRPCCredentials
@@ -128,9 +180,22 @@ func (s *STS) Token() (*oauth2.Token, error) {
 func (s *STS) GetRequestMetadata(ctx context.Context, aud ...string) (map[string]string, error) {
 
 	// The K8S-signed JWT
-	kt, err := s.kr.GetToken(ctx, s.kr.TrustDomain)
+	kaud := s.kr.TrustDomain
+	if s.K8S {
+		if s.AudOverride != "" {
+			kaud = s.AudOverride
+		} else {
+			kaud = aud[0]
+		}
+	}
+
+	kt, err := s.kr.GetToken(ctx, kaud)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.K8S {
+		return s.md(kt), err
 	}
 
 	// Federated token - a google token equivalent with the k8s JWT, using STS
@@ -148,19 +213,15 @@ func (s *STS) GetRequestMetadata(ctx context.Context, aud ...string) (map[string
 	}
 
 	// TODO: better way to determine if the destination supports federated token directly.
-	if !s.MDPSA && strings.Contains(a0, "googleapis.com/") {
-		return map[string]string{
-			"authorization": "Bearer " + ft,
-		}, nil
+	if !s.UseAccessToken && !s.MDPSA && strings.Contains(a0, "googleapis.com/") {
+		return s.md(ft), nil
 	}
 
 	token, err := s.TokenAccess(ctx, ft, a0)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{
-		"authorization": "Bearer " + token,
-	}, nil
+	return s.md(token), nil
 }
 
 func (s *STS) RequireTransportSecurity() bool {

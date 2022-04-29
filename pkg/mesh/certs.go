@@ -54,7 +54,7 @@ func (kr *KRun) InitCertificates(ctx context.Context, outDir string) error {
 			kp.Leaf, _ = x509.ParseCertificate(kp.Certificate[0])
 
 			exp := kp.Leaf.NotAfter.Sub(time.Now())
-			if exp > -5 * time.Minute {
+			if exp > -5*time.Minute {
 				kr.X509KeyPair = &kp
 				log.Println("Existing Cert", "expires", exp)
 				return nil
@@ -82,11 +82,11 @@ func (kr *KRun) InitCertificates(ctx context.Context, outDir string) error {
 		kp.Leaf, _ = x509.ParseCertificate(kp.Certificate[0])
 
 		if !kp.Leaf.NotAfter.Before(time.Now()) {
-			r, _ := x509.ParseCertificate(kp.Certificate[len(kp.Certificate) - 1])
+			r, _ := x509.ParseCertificate(kp.Certificate[len(kp.Certificate)-1])
 			log.Println("New Cert", "expires", kp.Leaf.NotAfter, "signer", r.Subject)
 		}
 	}
-	if outDir != "" {
+	if !kr.SkipSaveCerts && outDir != "" {
 		os.MkdirAll(outDir, 0755)
 		err = ioutil.WriteFile(keyFile, privPEM, 0660)
 		if err != nil {
@@ -107,6 +107,31 @@ func (kr *KRun) InitCertificates(ctx context.Context, outDir string) error {
 
 	return err
 }
+
+//func (kr *KRun) SaveCerts(outDir string) error {
+//	if kr.X509KeyPair == nil {
+//		return nil
+//	}
+//	keyFile := filepath.Join(outDir, privateKey)
+//	chainFile := filepath.Join(outDir, cert)
+//	os.MkdirAll(outDir, 0755)
+//	//kr.X509KeyPair.PrivateKey
+//
+//	err := ioutil.WriteFile(keyFile, privPEM, 0660)
+//	if err != nil {
+//		return err
+//	}
+//	err = ioutil.WriteFile(chainFile, []byte(certChain), 0660)
+//	if err != nil {
+//		return err
+//	}
+//	if os.Getuid() == 0 {
+//		os.Chown(outDir, 1337, 1337)
+//		os.Chown(keyFile, 1337, 1337)
+//		os.Chown(chainFile, 1337, 1337)
+//	}
+//	return nil
+//}
 
 // InitRoots will find the mesh roots.
 //
@@ -160,8 +185,11 @@ func (kr *KRun) InitRoots(ctx context.Context, outDir string) error {
 		kr.TrustedCertPool.AddCert(c)
 	}
 
-	if outDir != "" {
-		os.MkdirAll(outDir, 0660)
+	if !kr.SkipSaveCerts && outDir != "" {
+		err = os.MkdirAll(outDir, 0755)
+		if err != nil {
+			return err
+		}
 		err = ioutil.WriteFile(rootFile, []byte(roots), 0644)
 		if err != nil {
 			return err
@@ -176,7 +204,6 @@ type CSRSigner interface {
 }
 
 const (
-
 	WorkloadCertDir = "./var/run/secrets/workload-spiffe-credentials"
 
 	// Different from typical Istio  and CertManager key.pem - we can check both
@@ -226,8 +253,6 @@ type ECDSA struct {
 	Curve string `json:"curve"`
 }
 
-
-
 // TrustConfig is the GKE config - when used outside GKE this is passed in the mesh-env
 type TrustConfigSpec struct {
 	TrustStores []TrustStore `json:"trustStores"`
@@ -239,16 +264,13 @@ type TrustStore struct {
 }
 
 type TrustAnchor struct {
-	SPIFFETrustBundleEndpoint      string `json:"spiffeTrustBundleEndpoint,omitempty"`
+	SPIFFETrustBundleEndpoint string `json:"spiffeTrustBundleEndpoint,omitempty"`
 
 	// Format: //privateca.googleapis.com/projects/PROJECT_ID/locations/ROOT_CA_POOL_LOCATION/caPools/ROOT_CA_POOL_NAME
 	CertificateAuthorityServiceURI string `json:"certificateAuthorityServiceURI,omitempty"`
 
-	PEMCertificate                 string `json:"pemCertificate,omitempty"`
+	PEMCertificate string `json:"pemCertificate,omitempty"`
 }
-
-
-
 
 func CheckFiles() {
 

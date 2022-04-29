@@ -23,6 +23,7 @@ metadata:
   name: hgate
   namespace: istio-system
   annotations:
+    cloud.google.com/neg: '{"exposed_ports":{"15010":{}}}'
     # The service is not meant for mesh use - excluding from cluster generation.
     # Since it listens on 80/443, would break whitebox listeners.
     # TODO: fix whitebox mode to honor UNTRUSTED
@@ -65,9 +66,13 @@ kind: Service
 metadata:
   name: hgate-istiod
   namespace: istio-system
+  annotations:
+    cloud.google.com/neg: '{"exposed_ports":{"15010":{}}}'
 spec:
   ports:
     - port: 15012
+      name: tcp-istiod-tls
+    - port: 15010
       name: tcp-istiod
   selector:
     app: istiod

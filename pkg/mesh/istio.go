@@ -43,12 +43,6 @@ import (
 //  /var/run/secrets/kubernetes.io/serviceaccount - xx-token-yy (by kubelet/service account controller)
 //
 
-// MeshConfig is a minimal mesh config - used to load in-cluster settings used in injection.
-type MeshConfig struct {
-	TrustDomain   string      `yaml:"trustDomain,omitempty"`
-	DefaultConfig ProxyConfig `yaml:"defaultConfig,omitempty"`
-}
-
 type ProxyConfig struct {
 	DiscoveryAddress  string            `yaml:"discoveryAddress,omitempty"`
 	MeshId            string            `yaml:"meshId,omitempty"`
@@ -115,8 +109,8 @@ func (kr *KRun) agentCommand() *exec.Cmd {
 	}
 	args = append(args, "--domain")
 	args = append(args, kr.Namespace+".svc.cluster.local")
-	args = append(args, "--serviceCluster")
-	args = append(args, kr.Name+"."+kr.Namespace)
+	//args = append(args, "--serviceCluster")
+	//args = append(args, kr.Name+"."+kr.Namespace)
 
 	if kr.AgentDebug != "" {
 		args = append(args, "--log_output_level="+kr.AgentDebug)
@@ -161,7 +155,7 @@ func (kr *KRun) StartIstioAgent() error {
 	if kr.CitadelRoot != "" {
 		err := ioutil.WriteFile(prefix+"/var/run/secrets/istio/root-cert.pem", []byte(kr.CitadelRoot), 0755)
 		if err != nil {
-			log.Println("Failed to write citadel root", "rootCAFile", prefix + "/var/run/secrets/istio/root-cert.pem", "error", err)
+			log.Println("Failed to write citadel root", "rootCAFile", prefix+"/var/run/secrets/istio/root-cert.pem", "error", err)
 		}
 	}
 
@@ -220,7 +214,6 @@ func (kr *KRun) StartIstioAgent() error {
 
 	kr.RefreshAndSaveTokens()
 
-
 	// Pod name MUST be an unique name - it is used in stackdriver which requires this ( errors on 'ordered updates' and
 	//  lost data otherwise)
 	// This also shows up in 'istioctl ps' and in istio logs
@@ -238,6 +231,7 @@ func (kr *KRun) StartIstioAgent() error {
 	if podName != "" {
 		if kr.InstanceID == "" {
 			podName = podName + "-" + strconv.Itoa(time.Now().Second())
+			kr.InstanceID = podName
 		} else if len(kr.InstanceID) > 8 {
 			podName = podName + "-" + kr.InstanceID[0:8]
 		} else {
@@ -309,9 +303,11 @@ func (kr *KRun) StartIstioAgent() error {
 
 	// MCP config
 	// The following 2 are required for MeshCA.
-	env = addIfMissing(env, "GKE_CLUSTER_URL", kr.ClusterAddress)
-	env = addIfMissing(env, "GCP_METADATA", fmt.Sprintf("%s|%s|%s|%s",
-		kr.ProjectId, kr.ProjectNumber, kr.ClusterName, kr.ClusterLocation))
+	if kr.ClusterAddress != "" {
+		env = addIfMissing(env, "GKE_CLUSTER_URL", kr.ClusterAddress)
+		env = addIfMissing(env, "GCP_METADATA", fmt.Sprintf("%s|%s|%s|%s",
+			kr.ProjectId, kr.ProjectNumber, kr.ClusterName, kr.ClusterLocation))
+	}
 
 	env = addIfMissing(env, "XDS_ADDR", kr.XDSAddr)
 	//env = append(env, "CA_ROOT_CA=/etc/ssl/certs/ca-certificates.crt")
@@ -327,7 +323,7 @@ func (kr *KRun) StartIstioAgent() error {
 	// Gets translated to "APP_CONTAINERS" metadata, used to identify the container.
 	env = addIfMissing(env, "ISTIO_META_APP_CONTAINERS", "cloudrun")
 
-	if kr.X509KeyPair != nil {
+	if kr.X509KeyPair != nil && kr.ClusterAddress != "" {
 		// Loaded from workload cert file - no need to use citadel or mesh CA.
 		env = addIfMissing(env, "CA_PROVIDER", "GoogleGkeWorkloadCertificate")
 	}
@@ -412,7 +408,7 @@ func (kr *KRun) StartIstioAgent() error {
 
 	go func() {
 		if Debug {
-			log.Println("Starting cmd", cmd.Args)
+			log.Println("Starting cmd", cmd.Args, cmd.Env)
 		}
 		err := cmd.Start()
 		if err != nil {
@@ -519,23 +515,23 @@ environment="cloud-run-mesh"
 
 func (kr *KRun) runIptablesSetup(env []string) error {
 	/*
-	Injected default:
-	  - -p
-	    - "15001"
-	    - -z
-	    - "15006"
-	    - -u
-	    - "1337"
-	    - -m
-	    - REDIRECT
-	    - -i
-	    - '*'
-	    - -x
-	    - ""
-	    - -b
-	    - '*'
-	    - -d
-	    - 15090,15021,15020
+		Injected default:
+		  - -p
+		    - "15001"
+		    - -z
+		    - "15006"
+		    - -u
+		    - "1337"
+		    - -m
+		    - REDIRECT
+		    - -i
+		    - '*'
+		    - -x
+		    - ""
+		    - -b
+		    - '*'
+		    - -d
+		    - 15090,15021,15020
 
 	*/
 	outRange := kr.Config("OUTBOUND_IP_RANGES_INCLUDE", "10.0.0.0/8")

@@ -143,15 +143,7 @@ func configFromEnvAndMD(ctx context.Context, kr *mesh.KRun) error {
 		}
 	}
 
-	if kr.Namespace == "" {
-		// Explicitly set ?
-		labels, err := ProjectLabels(ctx, kr.ProjectId)
-		if err != nil {
-			log.Println("Failed to find labels")
-			return err
-		}
-		kr.Namespace = labels["mesh-namespace"]
-	}
+	// No longer using project lables
 
 	if kr.Namespace == "" {
 		// Default convention for project-as-namespace:
@@ -159,20 +151,25 @@ func configFromEnvAndMD(ctx context.Context, kr *mesh.KRun) error {
 		// Pid may have lowercase letters/digits/hyphens - mostly DNS conventions.
 		pidparts := strings.Split(kr.ProjectId, "-")
 		if len(pidparts) > 2 {
-			kr.Namespace = pidparts[len(pidparts) - 2]
+			kr.Namespace = pidparts[len(pidparts)-2]
 			if mesh.Debug {
 				log.Println("Defaulting Namespace based on project ID: ", kr.Namespace, kr.ProjectId)
 			}
+		} else {
+			// Default to project ID.
+			kr.Namespace = kr.ProjectId
 		}
 	}
 
-	log.Println("GCP config ",
-		"gsa", gsa,
-		"cluster", kr.ProjectId + "/" + kr.ClusterLocation + "/" + kr.ClusterName,
-		"projectNumber", kr.ProjectNumber,
-		"iid", kr.InstanceID,
-		"location", kr.ClusterLocation,
-		"sinceStart", time.Since(t0))
+	if mesh.Debug {
+		log.Println("GCP config ",
+			"gsa", gsa,
+			"cluster", kr.ProjectId+"/"+kr.ClusterLocation+"/"+kr.ClusterName,
+			"projectNumber", kr.ProjectNumber,
+			"iid", kr.InstanceID,
+			"location", kr.ClusterLocation,
+			"sinceStart", time.Since(t0))
+	}
 	return nil
 }
 
@@ -237,7 +234,6 @@ func PostConfigLoad(ctx context.Context, kr *mesh.KRun) error {
 	return err
 }
 
-
 // InitGCP loads GCP-specific metadata and discovers the config cluster.
 // This step is skipped if user has explicit configuration for required settings.
 //
@@ -274,7 +270,7 @@ func initGKE(ctx context.Context, kc *k8s.K8S) error {
 			configProjectID = kr.MeshAddr.Host
 			if len(kr.MeshAddr.Path) > 1 {
 				parts := strings.Split(kr.MeshAddr.Path, "/")
-				for i := 0 ; i < len(parts); i++ {
+				for i := 0; i < len(parts); i++ {
 					if parts[i] == "projects" && i+1 < len(parts) {
 						configProjectID = parts[i+1]
 					}
@@ -316,7 +312,6 @@ func initGKE(ctx context.Context, kc *k8s.K8S) error {
 		if len(cll) == 0 {
 			return nil // no cluster to use
 		}
-
 
 		cl = findCluster(kc, cll, myRegion, cl)
 		// TODO: connect to cluster, find istiod - and keep trying until a working one is found ( fallback )
@@ -464,13 +459,15 @@ func ProjectLabels(ctx context.Context, p string) (map[string]string, error) {
 	}
 	pdata, err := cr.Projects.Get(p).Context(ctx).Do()
 	if err != nil {
-		log.Println("Error getting project number", p, err)
+		if k8s.Debug {
+			// Will be loaded from configmap
+			log.Println("Error getting project labels", p, err)
+		}
 		return nil, err
 	}
 
 	return pdata.Labels, nil
 }
-
 
 func ProjectNumber(p string) string {
 	ctx := context.Background()
@@ -501,7 +498,7 @@ func AllClusters(ctx context.Context, kr *mesh.KRun, configProjectId string,
 	if configProjectId != kr.ProjectId {
 		opts = append(opts, option.WithQuotaProject(configProjectId))
 	}
-	cl, err := container.NewClusterManagerClient(ctx,opts...)
+	cl, err := container.NewClusterManagerClient(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
