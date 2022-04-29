@@ -35,9 +35,6 @@ type casCertProvider struct {
 	caClient *privateca.CertificateAuthorityClient
 }
 
-
-
-
 // NewCASCertProvider create a client for Google CAS.
 //
 // capool is in format: projects/*/locations/*/caPools/*
@@ -59,7 +56,7 @@ func NewCASCertProvider(capool string, ol []grpc.DialOption) (*casCertProvider, 
 	ctx := context.Background()
 	var err error
 
-	var ol1  []option.ClientOption
+	var ol1 []option.ClientOption
 	for _, v := range ol {
 		ol1 = append(ol1, option.WithGRPCDialOption(v))
 	}
