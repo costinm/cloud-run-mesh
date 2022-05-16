@@ -27,7 +27,7 @@ export CLUSTER_NAME
 CONFIG_PROJECT_ID?=${PROJECT_ID}
 # mesh-config-1
 CONFIG_CLUSTER_NAME?=${CLUSTER_NAME}
-
+export CONFIG_PROJECT_ID
 
 # Region where the cloudrun services are running
 REGION?=us-central1
