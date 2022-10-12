@@ -71,7 +71,7 @@ type KRun struct {
 
 	// External address of the mesh connector
 	// Not used for internal workloads.
-	MeshConnectorAddr         string
+	MeshConnectorAddr string
 
 	// Internal (ILB) address.
 	MeshConnectorInternalAddr string
@@ -128,10 +128,10 @@ type KRun struct {
 	appCmd      *exec.Cmd
 	TrustDomain string
 
-	StartTime  time.Time
+	StartTime      time.Time
 	EnvoyStartTime time.Time
 	EnvoyReadyTime time.Time
-	AppReadyTime time.Time
+	AppReadyTime   time.Time
 
 	Labels     map[string]string
 	VendorInit func(context.Context, *KRun) error
@@ -273,7 +273,6 @@ func (kr *KRun) Region() string {
 
 // initFromEnv will use the env variables, metadata server and cluster configmaps
 // to get the initial configuration for Istio and KRun.
-//
 func (kr *KRun) initFromEnv() {
 	mesh := kr.Config("MESH", "")
 	if mesh != "" {
@@ -503,7 +502,6 @@ func (kr *KRun) FindXDSAddr() string {
 // loadMeshEnv will lookup the 'mesh-env', an opaque config for the mesh.
 // Currently it is loaded from K8S
 // TODO: URL, like 'konfig' ( including gcp pseudo-URL like gcp://cluster.location.project/.... )
-//
 func (kr *KRun) loadMeshEnv(ctx context.Context) error {
 	if kr.Cfg == nil {
 		return nil // no k8s, skip loading.

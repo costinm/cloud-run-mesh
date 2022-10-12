@@ -144,14 +144,19 @@ func (kr *KRun) StartIstioAgent() error {
 
 	// Save the istio certificates - for proxyless or app use.
 	os.MkdirAll(prefix+"/var/run/secrets/istio", 0755)
+	os.MkdirAll(prefix+"/var/run/secrets/workload-spiffe-uds", 0755)
+	os.MkdirAll(prefix+"/var/run/secrets/workload-spiffe-credentials", 0755)
 	os.MkdirAll(prefix+"/var/run/secrets/mesh", 0755)
 	os.MkdirAll(prefix+"/var/run/secrets/istio.io", 0755)
 	os.MkdirAll(prefix+"/etc/istio/pod", 0755)
 	if os.Getuid() == 0 {
-		//os.Chown(prefix+"/var/lib/istio/envoy", 1337, 1337)
+		os.Chown(prefix+"/var/lib/istio/envoy", 1337, 1337)
+		os.Chmod("/var/run/secrets", 0777)
 		os.Chown(prefix+"/var/run/secrets/istio.io", 1337, 1337)
 		os.Chown(prefix+"/var/run/secrets/istio", 1337, 1337)
 		os.Chown(prefix+"/var/run/secrets/mesh", 1337, 1337)
+		os.Chown(prefix+"/var/run/secrets/workload-spiffe-uds", 1337, 1337)
+		os.Chown(prefix+"/var/run/secrets/workload-spiffe-credentials", 1337, 1337)
 		os.Chown(prefix+"/etc/istio/pod", 1337, 1337)
 		os.Chown(prefix+"/etc/istio/proxy", 1337, 1337)
 	}
@@ -161,8 +166,9 @@ func (kr *KRun) StartIstioAgent() error {
 	if kr.CitadelRoot != "" {
 		err := ioutil.WriteFile(prefix+"/var/run/secrets/istio/root-cert.pem", []byte(kr.CitadelRoot), 0755)
 		if err != nil {
-			log.Println("Failed to write citadel root", "rootCAFile", prefix + "/var/run/secrets/istio/root-cert.pem", "error", err)
+			log.Println("Failed to write citadel root", "rootCAFile", prefix+"/var/run/secrets/istio/root-cert.pem", "error", err)
 		}
+		os.Chown(prefix+"/var/run/secrets/istio/root-cert.pem", 1337, 1337)
 	}
 
 	// /dev/stdout is rejected - it is a pipe.
@@ -171,6 +177,8 @@ func (kr *KRun) StartIstioAgent() error {
 	if kr.Name == "" && kr.Gateway != "" {
 		kr.Name = kr.Gateway
 	}
+
+	forceStart := os.Getenv("FORCE_START") != ""
 
 	env := os.Environ()
 
@@ -219,7 +227,6 @@ func (kr *KRun) StartIstioAgent() error {
 	env = addIfMissing(env, "POD_NAMESPACE", kr.Namespace)
 
 	kr.RefreshAndSaveTokens()
-
 
 	// Pod name MUST be an unique name - it is used in stackdriver which requires this ( errors on 'ordered updates' and
 	//  lost data otherwise)
@@ -402,6 +409,7 @@ func (kr *KRun) StartIstioAgent() error {
 	} else {
 		cmd.Stdout = os.Stdout
 		env = append(env, "ISTIO_META_UNPRIVILEGED_POD=true")
+		log.Println("Starting an unprivileged pod, no root")
 	}
 	cmd.Env = env
 
@@ -431,9 +439,14 @@ func (kr *KRun) StartIstioAgent() error {
 			} else {
 				log.Println("Wait err ", err)
 			}
-			kr.Exit(1)
+			if !forceStart {
+				kr.Exit(1)
+			}
 		}
-		kr.Exit(0)
+		log.Println("Agent done", cmd)
+		if !forceStart {
+			kr.Exit(0)
+		}
 	}()
 
 	return nil
@@ -519,23 +532,23 @@ environment="cloud-run-mesh"
 
 func (kr *KRun) runIptablesSetup(env []string) error {
 	/*
-	Injected default:
-	  - -p
-	    - "15001"
-	    - -z
-	    - "15006"
-	    - -u
-	    - "1337"
-	    - -m
-	    - REDIRECT
-	    - -i
-	    - '*'
-	    - -x
-	    - ""
-	    - -b
-	    - '*'
-	    - -d
-	    - 15090,15021,15020
+		Injected default:
+		  - -p
+		    - "15001"
+		    - -z
+		    - "15006"
+		    - -u
+		    - "1337"
+		    - -m
+		    - REDIRECT
+		    - -i
+		    - '*'
+		    - -x
+		    - ""
+		    - -b
+		    - '*'
+		    - -d
+		    - 15090,15021,15020
 
 	*/
 	outRange := kr.Config("OUTBOUND_IP_RANGES_INCLUDE", "10.0.0.0/8")
@@ -545,17 +558,20 @@ func (kr *KRun) runIptablesSetup(env []string) error {
 		excludePorts = excludePorts + ",15008,15009"
 	}
 
+	env = append(env, "EXCLUDE_INTERFACES=eth0")
 	cmd := exec.Command("/usr/local/bin/pilot-agent",
 		"istio-iptables",
 		// "-p", "15001", // outbound capture port, default value
-		//"-z", "15006", - no inbound interception, default value
+		//"-z", "15006", // inbound interception, default
 		"-u", "1337", // REQUIRED - code default is 128
 		//"-m", "REDIRECT", // default value
 		//"-i", "*", // OUTBOUND_IP_RANGES_INCLUDE
 		"-i", outRange, // Alternative - only mesh traffic
-		// "-b", "", // disable all inbound redirection, default
-		// "-d", "15090,15021,15020", // exclude specific ports from inbound capture, if -b '*'
+		//"-b", "", // disable all inbound redirection, default
+		"-b", "*",
+		"-d", "15000,15090,15021,15020,15022,15008,15009", // exclude specific ports from inbound capture, if -b '*'
 		"-o", excludePorts,
+		"-c", "eth0",
 		//"-x", "", // exclude CIDR, default
 	)
 	cmd.Env = env
@@ -575,6 +591,8 @@ func (kr *KRun) runIptablesSetup(env []string) error {
 			return err
 		}
 	}
+	//log.Println("XXX starting iptables", err, so.String(), "stderr:", se.String())
+
 	// TODO: make the stdout/stderr available in a debug endpoint
 	return nil
 }

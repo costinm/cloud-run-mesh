@@ -54,6 +54,8 @@ func main() {
 
 	meshMode := true
 
+	forceStart := os.Getenv("FORCE_START") != ""
+
 	if _, err := os.Stat("/usr/local/bin/pilot-agent"); os.IsNotExist(err) {
 		meshMode = false
 	}
@@ -71,21 +73,23 @@ func main() {
 		kr.EnvoyStartTime = time.Now()
 		err := kr.StartIstioAgent()
 		if err != nil {
-			log.Fatal("Failed to start the mesh agent ", err)
-		}
-		err = kr.WaitHTTPReady("http://127.0.0.1:15021/healthz/ready", 10*time.Second)
-		if err != nil {
-			cd, err := http.Get("http://127.0.0.1:15000/config_dump")
-			if err == nil {
-				cdb, err := ioutil.ReadAll(cd.Body)
+			log.Println("Failed to start the mesh agent ", err)
+		} else {
+			err = kr.WaitHTTPReady("http://127.0.0.1:15021/healthz/ready", 10*time.Second)
+			if err != nil {
+				cd, err := http.Get("http://127.0.0.1:15000/config_dump")
 				if err == nil {
-					//os.Stderr.Write(cdb)
-					ioutil.WriteFile("./var/lib/istio/envoy/config_dump.json", cdb, 0777)
+					cdb, err := ioutil.ReadAll(cd.Body)
+					if err == nil {
+						//os.Stderr.Write(cdb)
+						ioutil.WriteFile("./var/lib/istio/envoy/config_dump.json", cdb, 0777)
+					}
+					log.Println("Mesh agent not ready ", err, string(cdb))
 				}
+				// 			log.Fatal("Mesh agent not ready ", err, string(cd))
 			}
-			log.Fatal("Mesh agent not ready ", err)
+			kr.EnvoyReadyTime = time.Now()
 		}
-		kr.EnvoyReadyTime = time.Now()
 	} else {
 		log.Println("Proxyless init", "cluster", kr.ClusterAddress,
 			"project_number", kr.ProjectNumber, "instanceID", kr.InstanceID,
@@ -106,7 +110,11 @@ func main() {
 
 	err = kr.WaitAppStartup()
 	if err != nil {
-		log.Fatal("Timeout waiting for app", err)
+		if forceStart {
+			log.Println("App failed to start", err)
+		} else {
+			log.Fatal("Timeout waiting for app", err)
+		}
 	}
 	log.Println("App ready",
 		"app_start", kr.AppReadyTime.Sub(kr.EnvoyReadyTime),

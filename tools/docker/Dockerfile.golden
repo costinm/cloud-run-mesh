@@ -12,6 +12,6 @@ WORKDIR /
 USER 0
 
 # Add a version variant, since this is different enough in packaging.
-ENV ISTIO_META_ISTIO_VERSION 1.13-master-cloudrun
+ENV ISTIO_META_ISTIO_VERSION 1.15-master-cloudrun
 
 ENTRYPOINT ["/usr/local/bin/krun"]

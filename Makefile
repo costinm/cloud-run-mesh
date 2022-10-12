@@ -72,6 +72,9 @@ all-golden: build docker/krun
 	docker push  ${KRUN_IMAGE}
 	docker push  ${KRUN_IMAGE}-distroless
 
+krun-golden: build docker/krun
+	docker push  ${KRUN_IMAGE}
+
 # Build, push, deploy hgate.
 all-hgate: build docker/hgate push/hgate deploy/hgate
 
@@ -142,6 +145,8 @@ test/e2e:
 	curl  -v  ${CR_URL}/fortio/fetch2/?url=http%3A%2F%2Ffortio.fortio-mcp.svc%3A8080%2Fecho
 	curl  -v  ${CR_URL}/fortio/fetch2/?url=http%3A%2F%2Fhttpbin.httpbin.svc%3A8000%2Fheaders
     #curl  ${CR_URL}/fortio/fetch2/?url=http%3A%2F%2Flocalhost%3A15000%2Fconfig_dump
+	# curl -v ${CR_URL}/fortio/ -H "Authorization: Bearer $(gcloud auth print-identity-token )"
+
 
 #### Pushing images
 
@@ -165,6 +170,30 @@ push/builder:
 
 deploy/fortio:
 	(cd samples/fortio; make deploy setup-sni)
+
+deploy/fortio-vpc:
+	(cd samples/fortio; SERVICE=fortio-vpc PROJECT_ID=wlhe-cr make deploy-vpc)
+
+deploy-gateway:
+	gcloud alpha run deploy istio-ingressgateway \
+		  --execution-environment=gen2 \
+		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
+		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
+          --allow-unauthenticated  \
+         \
+         --port 8080 \
+         \
+         --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
+         --min-instances 1 --max-instances 1 \
+         --network=default --subnet=default \
+         \
+		--image ${KRUN_IMAGE} \
+		\
+		--set-env-vars="GATEWAY=istio-ingressgateway" \
+		--set-env-vars="FORCE_START=1" \
+		--set-env-vars="XDS_AGENT_DEBUG=sds:debug" \
+		--set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
+		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
 
 deploy/fortio-auth:
 	gcloud alpha run deploy fortio-auth \

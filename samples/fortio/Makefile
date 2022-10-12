@@ -57,6 +57,7 @@ setup: setup-gsa setup-rbac
 
 # Build the image using the proxy as base
 image:
+	echo GOLDEN: ${GOLDEN_IMAGE}
 	docker build --build-arg=BASE=${GOLDEN_IMAGE} -t ${FORTIO_IMAGE} ${DOCKER_BUILD_ARGS} .
 
 push:
@@ -66,6 +67,9 @@ push:
 # Note: ^.^ changes the separator for env vars from : to .
 #  		 --set-env-vars="^.^ENVOY_LOG_LEVEL=debug,config:warn,main:warn,upstream:warn" \
 #  		 --set-env-vars="XDS_AGENT_DEBUG=googleca:debug" \
+
+# To start without IPTABLES, in whitebox:
+#  ISTIO_META_INTERCEPTION_MODE=NONE
 
 # Deploy to cloudrun
 # Adding XDS_ADDR=READ_DOMAIN:443 will skip looking up for MCP configmap and use that address instead.
@@ -90,6 +94,33 @@ deploy:
   		  ${FORTIO_DEPLOY_EXTRA} \
 		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
 
+# VPC deployment:
+# - no connector
+# - no allow-unauthenticated - auth using IAM from internet
+# - TODO: use port 15008 and std HBone
+# - TODO: separate path for ingress from internet ?
+# - TODO: autoregistration
+deploy-vpc:
+	gcloud alpha run deploy ${SERVICE} \
+		  --execution-environment=gen2 \
+		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
+		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
+          --allow-unauthenticated  \
+         \
+         --port 8080 \
+         \
+         --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
+         --min-instances 1 --max-instances 1 \
+         --network=default --subnet=default \
+         \
+		--image ${FORTIO_IMAGE} \
+		\
+		--set-env-vars="FORCE_START=1" \
+		--set-env-vars="XDS_AGENT_DEBUG=sds:debug" \
+		--set-env-vars="ISTIO_DEBUG=sds:debug" \
+		   --set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
+  		  ${FORTIO_DEPLOY_EXTRA} \
+		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
 
 # No longer used:
 #		   --set-env-vars="CLUSTER_NAME=${CLUSTER_NAME}" \
