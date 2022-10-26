@@ -84,7 +84,7 @@ func main() {
 						//os.Stderr.Write(cdb)
 						ioutil.WriteFile("./var/lib/istio/envoy/config_dump.json", cdb, 0777)
 					}
-					log.Println("Mesh agent not ready ", err, string(cdb))
+					//log.Println("Mesh agent not ready ", err, string(cdb))
 				}
 				// 			log.Fatal("Mesh agent not ready ", err, string(cd))
 			}
@@ -106,14 +106,16 @@ func main() {
 		go initDebug(kr)
 	}
 
-	kr.StartApp()
+	if len(os.Args) > 1 {
+		kr.StartApp()
 
-	err = kr.WaitAppStartup()
-	if err != nil {
-		if forceStart {
-			log.Println("App failed to start", err)
-		} else {
-			log.Fatal("Timeout waiting for app", err)
+		err = kr.WaitAppStartup()
+		if err != nil {
+			if forceStart {
+				log.Println("App failed to start", err)
+			} else {
+				log.Fatal("Timeout waiting for app", err)
+			}
 		}
 	}
 	log.Println("App ready",

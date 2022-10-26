@@ -171,29 +171,16 @@ push/builder:
 deploy/fortio:
 	(cd samples/fortio; make deploy setup-sni)
 
-deploy/fortio-vpc:
-	(cd samples/fortio; SERVICE=fortio-vpc PROJECT_ID=wlhe-cr make deploy-vpc)
+all/fortio-vpc: build docker/krun docker/fortio push/fortio deploy/fortio-vpc
 
-deploy-gateway:
-	gcloud alpha run deploy istio-ingressgateway \
-		  --execution-environment=gen2 \
-		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
-		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
-          --allow-unauthenticated  \
-         \
-         --port 8080 \
-         \
-         --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
-         --min-instances 1 --max-instances 1 \
-         --network=default --subnet=default \
-         \
-		--image ${KRUN_IMAGE} \
-		\
-		--set-env-vars="GATEWAY=istio-ingressgateway" \
-		--set-env-vars="FORCE_START=1" \
-		--set-env-vars="XDS_AGENT_DEBUG=sds:debug" \
-		--set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
-		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
+deploy/fortio-vpc:
+	(cd samples/fortio; make deploy-vpc)
+
+
+# Deploy multi-container. By default auth mode is private, UI or gcloud iam to enable access to port 8080.
+deploy/fortio-vpc-mc:
+	(cd samples/fortio; gcloud alpha run services replace cr-fortio-vpc-service.yaml --project ${PROJECT_ID})
+
 
 deploy/fortio-auth:
 	gcloud alpha run deploy fortio-auth \
@@ -314,6 +301,7 @@ pull:
 deps:
 	curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 	chmod +x kubectl
+	curl -LO https://get.helm.sh/helm-v3.10.1-linux-amd64.tar.gz
 	# TODO: helm, gcrane
 
 # Used for the target installing in-cluster istio, not required when testing with MCP
@@ -332,7 +320,8 @@ deploy/istio-base:
 	helm upgrade --install istio-base istio/base -n istio-system ${CHART_VERSION} | true
 
 # Default install of istiod, with a number of options set for interop with ASM and MCP.
-#
+ # For MCP interop:      --set meshConfig.trustDomainAliases[0]="${CONFIG_PROJECT_ID}.svc.id.goog" \
+ #
 # TODO: add docs on how to upgrade an existing istio, explain the config.
 #
 # To install a revisioned istio, replace "istiod" with "istiod-REV and add --set revision=${REV}
@@ -350,11 +339,17 @@ deploy/istiod:
         --set global.hub=${ISTIO_HUB} \
         --set global.tag=${ISTIO_TAG} \
 		--set telemetry.enabled=true \
-		--set global.sds.token.aud="${CONFIG_PROJECT_ID}.svc.id.goog" \
-        --set meshConfig.trustDomain="${CONFIG_PROJECT_ID}.svc.id.goog" \
+		--set telemetry.v2.enabled=true \
+		--set global.sts.servicePort=15463  \
+		--set telemetry.v2.stackdriver.enabled=true \
+		--set telemetry.v2.stackdriver.topology=true \
+        --set global.sds.token.aud="${CONFIG_PROJECT_ID}.svc.id.goog" \
+		--set global.meshID="proj-${PROJECT_NUMBER}" \
+        --set meshConfig.trustDomain="cluster.local" \
         \
 		--set meshConfig.proxyHttpPort=15007 \
         --set meshConfig.accessLogFile=/dev/stdout \
+        --set meshConfig.accessLogEncoding=JSON \
         \
         --set pilot.replicaCount=1 \
         --set pilot.autoscaleEnabled=false \
@@ -362,7 +357,7 @@ deploy/istiod:
 		--set pilot.env.TOKEN_AUDIENCES="${CONFIG_PROJECT_ID}.svc.id.goog\,istio-ca" \
         --set pilot.env.ISTIO_MULTIROOT_MESH=true \
         --set pilot.env.PILOT_ENABLE_WORKLOAD_ENTRY_AUTOREGISTRATION=true \
-		--set pilot.env.PILOT_ENABLE_WORKLOAD_ENTRY_HEALTHCHECKS=true
+		--set pilot.env.PILOT_ENABLE_WORKLOAD_ENTRY_HEALTHCHECKS=false
 
 default-ns-istio-system:
 	 kubectl config set-context --current --namespace=istio-system

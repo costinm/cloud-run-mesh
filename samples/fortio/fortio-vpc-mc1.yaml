@@ -1,0 +1,59 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: WorkloadGroup
+metadata:
+  name: fortio-vpc-mc1
+  namespace: fortio
+spec:
+  metadata:
+    annotations:
+      security.cloud.google.com/IdentityProvider: google
+    labels:
+      app: fortio-vpc-mc1
+  template:
+    ports:
+      http: 8080
+    # This should be used if the GCP-style certificate is used
+    # It also allows k8s-fortio to get certificates from MeshCA with this SAN
+    serviceAccount: default
+    #serviceAccount: k8s-fortio@wlhe-cr.iam.gserviceaccount.com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fortio-vpc
+  namespace: fortio
+spec:
+  ports:
+    - port: 8080
+      name: http-echo
+  selector:
+    app: fortio-vpc-mc1
+
+---
+# Make sure this is secure, no permissive
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: fortio-vpc-mc1
+  namespace: fortio
+spec:
+  selector:
+    matchLabels:
+      app: fortio-vpc-mc1
+  mtls:
+    mode: STRICT
+---
+# No guessing on client side either
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: fortio-vpc-mc1
+  namespace: fortio
+spec:
+  host: fortio-vpc-mc1
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+      subjectAltNames:
+        - spiffe://wlhe-cr.svc.id.goog/ns/fortio/sa/default
+        - spiffe://cluster.local/ns/fortio/sa/default

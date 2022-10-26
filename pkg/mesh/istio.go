@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -269,6 +270,13 @@ func (kr *KRun) StartIstioAgent() error {
 	env = addIfMissing(env, "POD_NAME", podName)
 	env = addIfMissing(env, "ISTIO_META_WORKLOAD_NAME", kr.Name)
 
+	// Autoregistration
+	eth1Addr := eth1Addr()
+	if eth1Addr != "" {
+		env = addIfMissing(env, "ISTIO_META_AUTO_REGISTER_GROUP", kr.Name)
+		env = addIfMissing(env, "AUTO_REGISTER_GROUP", kr.Name)
+		env = addIfMissing(env, "INSTANCE_IP", eth1Addr)
+	}
 	env = addIfMissing(env, "SERVICE_ACCOUNT", kr.KSA)
 
 	if kr.ProjectNumber != "" {
@@ -292,10 +300,12 @@ func (kr *KRun) StartIstioAgent() error {
 		kr.WhiteboxMode = true
 	}
 
-	iptablesEnv := []string{}
-	iptablesEnv = append(iptablesEnv, env...)
-
 	if !kr.WhiteboxMode {
+		env = addIfMissing(env, "ISTIO_META_DNS_CAPTURE", "true")
+
+		iptablesEnv := []string{}
+		iptablesEnv = append(iptablesEnv, env...)
+
 		err := kr.runIptablesSetup(iptablesEnv)
 		if err != nil {
 			log.Println("iptables disabled ", err)
@@ -307,12 +317,11 @@ func (kr *KRun) StartIstioAgent() error {
 		log.Println("No iptables - starting with INTERCEPTION_MODE=NONE")
 	}
 
-	// Currently broken in iptables - use whitebox interception, but still run it
-	if !kr.WhiteboxMode {
-		resolvConfForRoot()
-		env = addIfMissing(env, "ISTIO_META_DNS_CAPTURE", "true")
-		env = addIfMissing(env, "DNS_PROXY_ADDR", "localhost:53")
-	}
+	// Only for single-container mode, using /etc/resolv.conf - if iptables DNS is broken
+	//if !kr.WhiteboxMode {
+	//resolvConfForRoot()
+	//env = addIfMissing(env, "DNS_PROXY_ADDR", "localhost:53")
+	//}
 
 	// MCP config
 	// The following 2 are required for MeshCA.
@@ -452,6 +461,34 @@ func (kr *KRun) StartIstioAgent() error {
 	return nil
 }
 
+func eth1Addr() string {
+
+	ifaces, _ := net.Interfaces()
+
+	for _, iface := range ifaces {
+		if iface.Name != "eth1" {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip.To4() != nil {
+				return ip.String()
+			}
+		}
+	}
+	return ""
+}
+
 // For troubleshooting, generate a file with the env and command.
 // This can also be used for running krun as a periodic job instead of as a launcher
 // Compile with  -gcflags  "all=-N -l"
@@ -530,7 +567,56 @@ environment="cloud-run-mesh"
 	}
 }
 
+// Extracted from the istio-generated config, modified.
+var iptables_save = `
+*nat
+:PREROUTING ACCEPT [10:3326]
+:INPUT ACCEPT [10:3326]
+:OUTPUT ACCEPT [233:19569]
+:POSTROUTING ACCEPT [233:19569]
+:ISTIO_INBOUND - [0:0]
+:ISTIO_IN_REDIRECT - [0:0]
+:ISTIO_OUTPUT - [0:0]
+:ISTIO_REDIRECT - [0:0]
+-A PREROUTING -i eth0 -j RETURN
+-A PREROUTING -p tcp -j ISTIO_INBOUND
+-A OUTPUT -o eth0 -p tcp -j RETURN
+-A OUTPUT -p tcp -j ISTIO_OUTPUT
+-A OUTPUT -p udp -m udp --dport 53 -m owner --uid-owner 1337 -j RETURN
+-A OUTPUT -p udp -m udp --dport 53 -m owner --gid-owner 1337 -j RETURN
+-A OUTPUT -d 169.254.169.254/32 -p udp -m udp --dport 53 -j REDIRECT --to-ports 15053
+-A OUTPUT -o eth0  -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15008 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15000 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15090 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15021 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15020 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15022 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15008 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15009 -j RETURN
+-A ISTIO_INBOUND -p tcp -j ISTIO_IN_REDIRECT
+-A ISTIO_IN_REDIRECT -p tcp -j REDIRECT --to-ports 15006
+-A ISTIO_OUTPUT -p tcp -m tcp --dport 15008 -j RETURN
+-A ISTIO_OUTPUT -p tcp -m tcp --dport 15009 -j RETURN
+-A ISTIO_OUTPUT -s 127.0.0.6/32 -o lo -j RETURN
+-A ISTIO_OUTPUT ! -d 127.0.0.1/32 -o lo -p tcp -m tcp ! --dport 53 -m owner --uid-owner 1337 -j ISTIO_IN_REDIRECT
+-A ISTIO_OUTPUT -o lo -p tcp -m tcp ! --dport 53 -m owner ! --uid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -m owner --uid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT ! -d 127.0.0.1/32 -o lo -m owner --gid-owner 1337 -j ISTIO_IN_REDIRECT
+-A ISTIO_OUTPUT -o lo -p tcp -m tcp ! --dport 53 -m owner ! --gid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -m owner --gid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -d 169.254.169.254/32 -p tcp -m tcp --dport 53 -j REDIRECT --to-ports 15053
+-A ISTIO_OUTPUT -d 127.0.0.1/32 -j RETURN
+-A ISTIO_OUTPUT -d 10.0.0.0/8 -j ISTIO_REDIRECT
+-A ISTIO_OUTPUT -j RETURN
+-A ISTIO_REDIRECT -p tcp -j REDIRECT --to-ports 15001
+COMMIT
+`
+
 func (kr *KRun) runIptablesSetup(env []string) error {
+	ioutil.WriteFile("/tmp/istio-iptables", []byte(iptables_save), 0700)
+	cmd := exec.Command("/usr/sbin/iptables-restore", "/tmp/istio-iptables")
+
 	/*
 		Injected default:
 		  - -p
@@ -551,29 +637,29 @@ func (kr *KRun) runIptablesSetup(env []string) error {
 		    - 15090,15021,15020
 
 	*/
-	outRange := kr.Config("OUTBOUND_IP_RANGES_INCLUDE", "10.0.0.0/8")
+	//outRange := kr.Config("OUTBOUND_IP_RANGES_INCLUDE", "10.0.0.0/8")
 	// Exclude ports from Envoy capture - hbone-h2, hbone-h2c
 	excludePorts := kr.Config("OUTBOUND_PORTS_EXCLUDE", "15008,15009")
 	if excludePorts != "15008,15009" {
 		excludePorts = excludePorts + ",15008,15009"
 	}
 
-	env = append(env, "EXCLUDE_INTERFACES=eth0")
-	cmd := exec.Command("/usr/local/bin/pilot-agent",
-		"istio-iptables",
-		// "-p", "15001", // outbound capture port, default value
-		//"-z", "15006", // inbound interception, default
-		"-u", "1337", // REQUIRED - code default is 128
-		//"-m", "REDIRECT", // default value
-		//"-i", "*", // OUTBOUND_IP_RANGES_INCLUDE
-		"-i", outRange, // Alternative - only mesh traffic
-		//"-b", "", // disable all inbound redirection, default
-		"-b", "*",
-		"-d", "15000,15090,15021,15020,15022,15008,15009", // exclude specific ports from inbound capture, if -b '*'
-		"-o", excludePorts,
-		"-c", "eth0",
-		//"-x", "", // exclude CIDR, default
-	)
+	//env = append(env, "EXCLUDE_INTERFACES=eth0")
+	//cmd := exec.Command("/usr/local/bin/pilot-agent",
+	//	"istio-iptables",
+	//	// "-p", "15001", // outbound capture port, default value
+	//	//"-z", "15006", // inbound interception, default
+	//	"-u", "1337", // REQUIRED - code default is 128
+	//	//"-m", "REDIRECT", // default value
+	//	//"-i", "*", // OUTBOUND_IP_RANGES_INCLUDE
+	//	"-i", outRange, // Alternative - only mesh traffic
+	//	//"-b", "", // disable all inbound redirection, default
+	//	"-b", "*",
+	//	"-d", "15000,15090,15021,15020,15022,15008,15009", // exclude specific ports from inbound capture, if -b '*'
+	//	"-o", excludePorts,
+	//	//"-c", "eth0",
+	//	//"-x", "", // exclude CIDR, default
+	//)
 	cmd.Env = env
 	cmd.Dir = "/"
 	so := &bytes.Buffer{}

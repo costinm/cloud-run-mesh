@@ -94,14 +94,8 @@ deploy:
   		  ${FORTIO_DEPLOY_EXTRA} \
 		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
 
-# VPC deployment:
-# - no connector
-# - no allow-unauthenticated - auth using IAM from internet
-# - TODO: use port 15008 and std HBone
-# - TODO: separate path for ingress from internet ?
-# - TODO: autoregistration
-deploy-vpc:
-	gcloud alpha run deploy ${SERVICE} \
+deploy-gateway:
+	gcloud alpha run deploy fortiogw \
 		  --execution-environment=gen2 \
 		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
 		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
@@ -109,15 +103,44 @@ deploy-vpc:
          \
          --port 8080 \
          \
+                  --no-cpu-throttling \
+         --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
+         --min-instances 1 --max-instances 3 \
+         --network=default --subnet=default \
+         \
+		--image ${KRUN_IMAGE} \
+		\
+		--set-env-vars="ISTIO_META_INTERCEPTION_MODE=NONE" \
+		--set-env-vars="TRUST_DOMAIN=cluster.local" \
+		--set-env-vars="GATEWAY_NAME=fortiogw" \
+		--set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
+		--set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
+
+
+# VPC deployment:
+# - no connector
+# - no allow-unauthenticated - auth using IAM from internet
+# - TODO: use port 15008 and std HBone
+# - TODO: separate path for ingress from internet ?
+# - TODO: autoregistration
+deploy-vpc:
+	gcloud alpha run deploy fortio-vpc \
+		  --execution-environment=gen2 \
+		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
+		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
+          --allow-unauthenticated  \
+         \
+         --port 8080 \
+         \
+         --no-cpu-throttling \
          --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
          --min-instances 1 --max-instances 1 \
          --network=default --subnet=default \
          \
 		--image ${FORTIO_IMAGE} \
 		\
-		--set-env-vars="FORCE_START=1" \
-		--set-env-vars="XDS_AGENT_DEBUG=sds:debug" \
-		--set-env-vars="ISTIO_DEBUG=sds:debug" \
+		--set-env-vars="TRUST_DOMAIN=cluster.local" \
+		--set-env-vars="ISTIO_EXCLUDE_INTERFACES=eth0" \
 		   --set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
   		  ${FORTIO_DEPLOY_EXTRA} \
 		 --set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"

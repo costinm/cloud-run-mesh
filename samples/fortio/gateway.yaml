@@ -1,0 +1,133 @@
+# Config file for running a Istio gateway for the sample namespace.
+# The gateway can scale to zero - it can only handle HTTP and HTTPS, and use either the assigned
+# domain or custom domain.
+
+---
+# A Service object selecting the workloads implementing the gateway, running in Cloudrun
+apiVersion: v1
+kind: Service
+metadata:
+  name: fortiogw
+  namespace: fortio
+spec:
+  type: ClusterIP
+  selector:
+    istio: fortiogw
+  ports:
+    - port: 8080
+      name: http
+---
+# The gateway definition.
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: fortiogw
+  namespace: fortio
+spec:
+  selector:
+    istio: fortiogw
+  servers:
+    - port:
+        number: 8080
+        name: http-wildcard
+        protocol: HTTP
+      hosts:
+        - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: fortio-gw
+  namespace: fortio
+spec:
+  hosts:
+    # With the self-assigned name - there is only one
+    # TODO: can 'bring your own' support multiple domains ?
+    - "*"
+  gateways:
+    - fortio/fortiogw
+  http:
+    # All routes for this namespace.
+    - match:
+      - uri:
+            prefix: /fortio-vpc/
+      route:
+        - destination:
+            port:
+              number: 8080
+            host:
+              fortio-vpc.fortio.svc.cluster.local
+      rewrite:
+        uri: /
+    - uri:
+        prefix: /fortio-local/
+      route:
+        - destination:
+            port:
+              number: 8080
+            host: fortio-local.fortio.svc.cluster.local
+      rewrite:
+        uri: /
+    - uri:
+          prefix: /fortio/
+      route:
+        - destination:
+            port:
+              number: 8080
+            host: fortio.fortio.svc.cluster.local
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: WorkloadGroup
+metadata:
+  name: fortiogw
+  namespace: fortio
+spec:
+  metadata:
+    annotations:
+      security.cloud.google.com/IdentityProvider: google
+    labels:
+      app: fortiogw
+  template:
+    ports:
+      http: 8080
+    serviceAccount: k8s-fortio@wlhe-cr.iam.gserviceaccount.com
+---
+# Gateway object - using K8S Gateway API (not used right now)
+#apiVersion: gateway.networking.k8s.io/v1alpha2
+#kind: Gateway
+#metadata:
+#  name: fortiogw
+#  namespace: fortio
+#spec:
+#  addresses:
+#  - value: fortiogw.fortio.svc.cluster.local
+#    type: Hostname
+#  gatewayClassName: istio
+#  listeners:
+#    - name: default
+#      hostname: "*.example.com"
+#      port: 8080
+#      protocol: HTTP
+#      allowedRoutes:
+#        namespaces:
+#          from: All
+---
+#apiVersion: gateway.networking.k8s.io/v1alpha2
+#kind: HTTPRoute
+#metadata:
+#  name: fortio-http
+#  namespace: fortio
+#spec:
+#  parentRefs:
+#    - name: fortiogw
+#      namespace: fortio
+#  hostnames: ["httpbin.example.com"]
+#  rules:
+#    - matches:
+#        - path:
+#            type: PathPrefix
+#            value: /get
+#      backendRefs:
+#        - name: httpbin
+#          port: 8000
+---
