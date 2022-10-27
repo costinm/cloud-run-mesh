@@ -135,11 +135,14 @@ gcloud alpha run deploy ${GATEWAY_NAME} \
 
 ```
 
-In this example we careat a namespace-owned gateway.
+This example creates a namespace-owned gateway. Unlike regular Istio
+gateways, there is no need to provision DNS and certificates, and no k8s-stored 
+Secrets used for certs. 
 
 We can access the 2 services using the gateway as:
-https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc1/fortio/
-https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc2/fortio/
+[$CLOUDRUN_ADDRESS/fortio-vpc-mc1/fortio/](https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc1/fortio/)
+and [$CLOUDRUN_ADDRESS/fortio-vpc-mc2/fortio/](https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc2/fortio/), based on the 
+2 routes configured in the fortio-gw VirtualService associated with the fortiogw Gateway.
 
 From each exposed app, we can connect to either K8S services or other 
 cloudrun services using the k8s service name - fortio-vpc-mc1 or 
