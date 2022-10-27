@@ -99,11 +99,17 @@ Currently only port 80 and 443 are supported.
 
 To deploy:
 
+1. Configure the Istio Gateway - the sample includes VirtualServices for the 
+workload created previously.
 ```
 # Configure the Istio routes and Gateway object
 # TODO: switch to K8S Gateway API 
 kubect apply -f gateway.yaml
 
+```
+
+2. Deploy the Gateway running in CloudRun.
+```
 export GATEWAY_NAME=fortiogw
 
 gcloud alpha run deploy ${GATEWAY_NAME} \
@@ -128,3 +134,24 @@ gcloud alpha run deploy ${GATEWAY_NAME} \
 
 
 ```
+
+In this example we careat a namespace-owned gateway.
+
+We can access the 2 services using the gateway as:
+https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc1/fortio/
+https://fortiogw-icq63pqnqq-uc.a.run.app/fortio-vpc-mc2/fortio/
+
+From each exposed app, we can connect to either K8S services or other 
+cloudrun services using the k8s service name - fortio-vpc-mc1 or 
+fortio-vpc-mc1.fortio, fortio-vpc-mc1.fortio.svc. 
+
+
+## Mixed services
+
+The k8s service in k8s-registration.yaml has a selector with "app: service-name".
+
+That means any pod, VM or Cloudrun instance configure with that label will
+be automatically added to the service. It is possible to run a Deployment
+or a VM with the same label, with traffic balanced across all environments.
+
+This is convenient for migrating workloads between environments. 

@@ -50,33 +50,43 @@ spec:
     # All routes for this namespace.
     - match:
       - uri:
-            prefix: /fortio-vpc/
+            prefix: /fortio/
       route:
         - destination:
             port:
               number: 8080
             host:
               fortio-vpc-mc1.fortio.svc.cluster.local
-      rewrite:
-        uri: /
+#    - match:
+#      - uri:
+#        prefix: /fortio-local/
+#      route:
+#        - destination:
+#            port:
+#              number: 8080
+#            host: fortio-local.fortio.svc.cluster.local
+#      rewrite:
+#        uri: /
     - match:
-      - uri:
-        prefix: /fortio-local/
+        - uri:
+            prefix: /fortio-vpc-mc1/
       route:
         - destination:
             port:
               number: 8080
-            host: fortio-local.fortio.svc.cluster.local
+            host: fortio-vpc-mc1.fortio.svc.cluster.local
       rewrite:
         uri: /
     - match:
       - uri:
-          prefix: /fortio/
+          prefix: /fortio-vpc-mc2/
       route:
         - destination:
             port:
               number: 8080
             host: fortio-vpc-mc2.fortio.svc.cluster.local
+      rewrite:
+        uri: /
 ---
 apiVersion: networking.istio.io/v1alpha3
 kind: WorkloadGroup
