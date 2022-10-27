@@ -158,3 +158,29 @@ be automatically added to the service. It is possible to run a Deployment
 or a VM with the same label, with traffic balanced across all environments.
 
 This is convenient for migrating workloads between environments. 
+
+## Auto-registration
+
+The WorkloadGroup config enables auto-registration. You can check the CloudRun instances
+using 
+
+```shell
+
+kubectl -n fortio get we
+...
+fortio-vpc-mc1-10.128.0.128   20h    10.128.0.128
+
+```
+
+For debugging, using a VM or Pod you can connect to the CR instance using
+
+
+```shell
+ssh -p 15022  10.128.0.128
+
+...
+iptables-save -c 
+tcpdump
+...
+
+```
