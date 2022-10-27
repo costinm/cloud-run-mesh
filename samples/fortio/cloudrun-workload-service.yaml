@@ -35,7 +35,7 @@ spec:
           value: eth0
         # Where to find Istiod
         - name: MESH
-          value: //container.googleapis.com/projects/${PROJECT_ID}/locations/${/clusters/istio
+          value: //container.googleapis.com/projects/${PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}
         - name: DEPLOY
           value: 221016-0432
         resources:

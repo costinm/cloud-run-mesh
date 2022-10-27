@@ -56,10 +56,11 @@ spec:
             port:
               number: 8080
             host:
-              fortio-vpc.fortio.svc.cluster.local
+              fortio-vpc-mc1.fortio.svc.cluster.local
       rewrite:
         uri: /
-    - uri:
+    - match:
+      - uri:
         prefix: /fortio-local/
       route:
         - destination:
@@ -68,13 +69,14 @@ spec:
             host: fortio-local.fortio.svc.cluster.local
       rewrite:
         uri: /
-    - uri:
+    - match:
+      - uri:
           prefix: /fortio/
       route:
         - destination:
             port:
               number: 8080
-            host: fortio.fortio.svc.cluster.local
+            host: fortio-vpc-mc2.fortio.svc.cluster.local
 ---
 apiVersion: networking.istio.io/v1alpha3
 kind: WorkloadGroup

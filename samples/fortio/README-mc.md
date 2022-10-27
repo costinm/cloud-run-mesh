@@ -75,6 +75,16 @@ on the same network.
 
 Note: currently minInstance=1 is required for workloads.
 
+### Accessing the workloads
+
+The 2 workloads can be accessed in multiple ways:
+
+1. From the mesh: http or ssh calls from any Pod or VM in the VPC
+2. From the internet: in CloudConsole you can change the access setting to allow 
+unauthenticated access, or use JWT tokens to access the service
+3. From Istio Gateways - the services act like any K8S Service
+4. From Istio Gateways running in CloudRun - next section.
+
 ## Gateway on CloudRun deployment
 
 Istio Gateways are normally deployed in cluster. Users need to use CertManager and few 
