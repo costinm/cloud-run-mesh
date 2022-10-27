@@ -1,0 +1,57 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ${CLOUDRUN_SERVICE}
+  labels:
+    cloud.googleapis.com/location: ${REGION}
+  annotations:
+    run.googleapis.com/launch-stage: ALPHA
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/network-interfaces: '[{"network": "default", "subnetwork": "default"}]'
+        autoscaling.knative.dev/minScale: '1'
+        run.googleapis.com/execution-environment: gen2
+        autoscaling.knative.dev/maxScale: '1'
+        run.googleapis.com/cpu-throttling: 'false'
+    spec:
+      containerConcurrency: 10
+      timeoutSeconds: 900
+      serviceAccountName: k8s-${WORKLOAD_NAMESPACE}@${PROJECT_ID}.iam.gserviceaccount.com
+      containers:
+      # Current working image, temporary
+      - image: gcr.io/wlhe-cr/krun:costin
+        # Set for exposng the tunnel - comment out the application port
+#        ports:
+#        - name: h2c
+#          containerPort: 15008
+        env:
+        - name: TRUST_DOMAIN
+          value: cluster.local
+        - name: ISTIO_EXCLUDE_INTERFACES
+          value: eth0
+        # Where to find Istiod
+        - name: MESH
+          value: //container.googleapis.com/projects/${PROJECT_ID}/locations/${/clusters/istio
+        - name: DEPLOY
+          value: 221016-0432
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1G
+      # Actual image - copy of fortio/fortio:latest, not a golden image or custom
+      - image: gcr.io/wlhe-cr/fortio:latest
+        args: ["server"]
+        ports:
+          - name: http1
+            containerPort: 8080
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1G
+  traffic:
+  - percent: 100
+    latestRevision: true

@@ -1,0 +1,120 @@
+# Sample with multiple containers
+
+
+## Cluster setup 
+
+The cluster setup is similar to 'golden image', the project Makefile includes
+targets to deploy istiod and the Mesh Connector. The Mesh Connector is not 
+used in this setup except for creating a config map that simplifies the setup,
+will likely be removed as a requirement.
+
+
+## Workload deployment 
+
+The examples will create 2 services, fortio-vpc-mc1 and fortio-vpc-mc2.
+
+There are 2 steps - configuring K8S, to be aware of the services and enable
+auto-registration, and deploying the app in cloudrun.
+
+```shell
+export PROJECT_ID=wlhe-cr
+export WORKLOAD_NAMESPACE=fortio
+export REGION=us-central1
+
+# K8S cluster holding istio configs ( can be autopilot )
+export CONFIG_PROJECT_ID=wlhe-cr
+export CLUSTER_LOCATION=us-central1-c
+export CLUSTER_NAME=istio
+
+
+export CLOUDRUN_SERVICE=fortio-vpc-mc1
+
+cat k8s-registration.yaml |  envsubst | kubectl apply -f -
+
+cat cloudrun-workload-service.yaml | envsubst > /tmp/${CLOUDRUN_SERVICE}.yaml
+
+gcloud alpha run services replace /tmp/${CLOUDRUN_SERVICE}.yaml --project ${PROJECT_ID}
+
+# Same thing, for the second service
+export CLOUDRUN_SERVICE=fortio-vpc-mc2
+
+cat k8s-registration.yaml |  envsubst | kubectl apply -f -
+
+cat cloudrun-workload-service.yaml | envsubst > /tmp/${CLOUDRUN_SERVICE}.yaml
+
+gcloud alpha run services replace /tmp/${CLOUDRUN_SERVICE}.yaml --project ${PROJECT_ID}
+
+
+```
+
+Once the command completes, both workloads should be working.
+
+It is possible to deploy additional services and deployments in K8S or VMs.
+The K8S Service created in the first step will have the name ${CLOUDRUN_SERVICE}
+and select any workload with the label "app: ${CLOUDRUN_SERVICE}" - so any
+request from the K8S cluster or from a CloudRun instance will be balanced across
+workloads running in all environments. 
+
+For this example we are only running workloads in CloudRun, so requests will be made
+from the first service to the second. 
+
+To verify the workloads are registered or to debug, run:
+
+```
+kubectl -n ${WORKLOAD_NAMESPACE} get workloadentry
+
+```
+
+The result should show entries with the name of the service followed by "-" and an IP address.
+That is the IP address of the instance - depending on auto-scaling it may be one or more IPs.
+When the workload scales down, the entry will be garbage collected and removed.
+
+The sidecar image includes a ssh server on port 15022 - for debugging you can 
+connect to it, but it must be from the VPC, for example using a VM or Pod running
+on the same network.
+
+Note: currently minInstance=1 is required for workloads.
+
+## Gateway on CloudRun deployment
+
+Istio Gateways are normally deployed in cluster. Users need to use CertManager and few 
+complex steps to get basic TLS working, and the gateway deployment is usually shared
+per cluster.
+
+It is also possible now to deploy a Istio Gateway as a CloudRun service. The gateway
+will automatically get a certificate and can scale to zero when not in use. It is possible
+to deploy the gateway as either 'per cluster' or for a single namespace. 
+
+Currently only port 80 and 443 are supported.
+
+To deploy:
+
+```
+# Configure the Istio routes and Gateway object
+# TODO: switch to K8S Gateway API 
+kubect apply -f gateway.yaml
+
+export GATEWAY_NAME=fortiogw
+
+gcloud alpha run deploy ${GATEWAY_NAME} \
+		  --execution-environment=gen2 \
+		  --platform managed --project ${PROJECT_ID} --region ${REGION} \
+		  --service-account=${CLOUDRUN_SERVICE_ACCOUNT} \
+          --allow-unauthenticated  \
+         \
+         --port 8080 \
+         \
+         --concurrency 10 --timeout 900 --cpu 1 --memory 1G \
+         --min-instances 0 --max-instances 3 \
+         --network=default --subnet=default \
+         \
+		--image ${KRUN_IMAGE} \
+		\
+		--set-env-vars="ISTIO_META_INTERCEPTION_MODE=NONE" \
+		--set-env-vars="TRUST_DOMAIN=cluster.local" \
+		--set-env-vars="GATEWAY_NAME=${GATEWAY_NAME}" \
+		--set-env-vars="MESH=//container.googleapis.com/projects/${CONFIG_PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}" \
+		--set-env-vars="DEPLOY=$(shell date +%y%m%d-%H%M)"
+
+
+```

@@ -1,14 +1,14 @@
 apiVersion: networking.istio.io/v1alpha3
 kind: WorkloadGroup
 metadata:
-  name: fortio-vpc-mc1
-  namespace: fortio
+  name: ${CLOUDRUN_SERVICE}
+  namespace: ${WORKLOAD_NAMESPACE}
 spec:
   metadata:
     annotations:
       security.cloud.google.com/IdentityProvider: google
     labels:
-      app: fortio-vpc-mc1
+      app: ${CLOUDRUN_SERVICE}
   template:
     ports:
       http: 8080
@@ -20,26 +20,26 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: fortio-vpc
-  namespace: fortio
+  name: ${CLOUDRUN_SERVICE}
+  namespace: ${WORKLOAD_NAMESPACE}
 spec:
   ports:
     - port: 8080
       name: http-echo
   selector:
-    app: fortio-vpc-mc1
+    app: ${CLOUDRUN_SERVICE}
 
 ---
 # Make sure this is secure, no permissive
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
-  name: fortio-vpc-mc1
-  namespace: fortio
+  name: ${CLOUDRUN_SERVICE}
+  namespace: ${WORKLOAD_NAMESPACE}
 spec:
   selector:
     matchLabels:
-      app: fortio-vpc-mc1
+      app: ${CLOUDRUN_SERVICE}
   mtls:
     mode: STRICT
 ---
@@ -47,13 +47,13 @@ spec:
 apiVersion: networking.istio.io/v1alpha3
 kind: DestinationRule
 metadata:
-  name: fortio-vpc-mc1
-  namespace: fortio
+  name: ${CLOUDRUN_SERVICE}
+  namespace: ${WORKLOAD_NAMESPACE}
 spec:
-  host: fortio-vpc-mc1
+  host: ${CLOUDRUN_SERVICE}
   trafficPolicy:
     tls:
       mode: ISTIO_MUTUAL
       subjectAltNames:
-        - spiffe://wlhe-cr.svc.id.goog/ns/fortio/sa/default
-        - spiffe://cluster.local/ns/fortio/sa/default
+        - spiffe://${PROJECT_ID}.id.goog/ns/${WORKLOAD_NAMESPACE}/sa/default
+        - spiffe://cluster.local/ns/${WORKLOAD_NAMESPACE}/sa/default
