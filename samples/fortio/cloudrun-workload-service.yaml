@@ -13,7 +13,7 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/network-interfaces: '[{"network": "default", "subnetwork": "default"}]'
-        # Required until a SNI-based Activator is implemented in the mesh connector
+        # Required until a SNI-based Activator is implemented in the mesh connector (Waypoint proxy).
         autoscaling.knative.dev/minScale: '1'
         run.googleapis.com/execution-environment: gen2
         # Auto-scale based on CPU usage.
@@ -23,38 +23,42 @@ spec:
     spec:
       containerConcurrency: 10
       timeoutSeconds: 900
+      # Can be customized - the sample uses a naming convention for convenience.
+      # The account must be granted GKE access and RBAC permissions to act as a
+      # K8S service account.
       serviceAccountName: k8s-${WORKLOAD_NAMESPACE}@${PROJECT_ID}.iam.gserviceaccount.com
       containers:
-      # Current working image, temporary
+      # Current working image, temporary. Contains Istio-proxy plus a startup app (krun) to
+      # prepare the environment and certificates.
       - image: gcr.io/wlhe-cr/krun:costin
         # Set for exposng the tunnel - comment out the application port
-#        ports:
-#        - name: h2c
-#          containerPort: 15008
         env:
+        # TRUST_DOMAIN in OSS Istio is cluster.local, in ASM is based on project ID.
+        # This example is using OSS Istiod.
         - name: TRUST_DOMAIN
           value: cluster.local
-        - name: ISTIO_EXCLUDE_INTERFACES
-          value: eth0
-        # Where to find Istiod
+        # Where to find Istiod - the K8S cluster must run Istiod and the Mesh Connector
         - name: MESH
           value: //container.googleapis.com/projects/${PROJECT_ID}/locations/${CLUSTER_LOCATION}/clusters/${CLUSTER_NAME}
-        - name: DEPLOY
-          value: 221016-0432
         resources:
-          limits:
-            cpu: '1'
-            memory: 1G
-      # Actual image - copy of fortio/fortio:latest, not a golden image or custom
+          requests:
+            cpu: '0.2'
+            memory: 512M
+      # Application code.
+      # This is a copy of fortio/fortio:latest, not a golden image.
+      # It is useful for testing auto-scaling and latency.
       - image: gcr.io/wlhe-cr/fortio:latest
         args: ["server"]
         ports:
+          # This is the main http port exposed by Fortio - will be made available on the
+          # CloudRun URL, using IAM.
+          # All the ports exposed will be available on the mesh, using mTLS and Istio policy.
           - name: http1
             containerPort: 8080
         resources:
-          limits:
-            cpu: '1'
-            memory: 1G
+          requests:
+            cpu: '0.8'
+            memory: 512M
   traffic:
   - percent: 100
     latestRevision: true

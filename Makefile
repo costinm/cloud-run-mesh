@@ -50,6 +50,7 @@ HGATE_IMAGE?=${REPO}/gate:${TAG}
 
 WORKLOAD_NAME?=fortio-cr
 WORKLOAD_NAMESPACE?=fortio
+export WORKLOAD_NAMESPACE
 
 CLOUDRUN_SERVICE_ACCOUNT=k8s-${WORKLOAD_NAMESPACE}@${PROJECT_ID}.iam.gserviceaccount.com
 
@@ -179,7 +180,9 @@ deploy/fortio-vpc:
 
 # Deploy multi-container. By default auth mode is private, UI or gcloud iam to enable access to port 8080.
 deploy/fortio-vpc-mc:
-	(cd samples/fortio; gcloud alpha run services replace cr-fortio-vpc-service.yaml --project ${PROJECT_ID})
+	(cd samples/fortio; cat cloudrun-workload-service.yaml | \
+		WORKLOAD_NAMESPACE=${WORKLOAD_NAMESPACE} CLOUDRUN_SERVICE=fortio-vpc-mc envsubst > /tmp/cloudrun.yaml)
+	(cd samples/fortio; gcloud alpha run services replace /tmp/cloudrun.yaml --project ${PROJECT_ID})
 
 
 deploy/fortio-auth:
