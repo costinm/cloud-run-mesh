@@ -13,9 +13,12 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/network-interfaces: '[{"network": "default", "subnetwork": "default"}]'
+        # Required until a SNI-based Activator is implemented in the mesh connector
         autoscaling.knative.dev/minScale: '1'
         run.googleapis.com/execution-environment: gen2
-        autoscaling.knative.dev/maxScale: '1'
+        # Auto-scale based on CPU usage.
+        autoscaling.knative.dev/maxScale: '10'
+        # This is required - the CloudRun runtime will need to check the /metrics to get real http usage
         run.googleapis.com/cpu-throttling: 'false'
     spec:
       containerConcurrency: 10
